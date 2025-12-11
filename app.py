@@ -1,92 +1,128 @@
-
-import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import streamlit as st
 
-st.title("Electric Field of a +q / -q Dipole")
-
-st.markdown(
+# --- 1. ฟังก์ชันคำนวณสนามไฟฟ้าใน 3 มิติ ---
+@st.cache_data
+def calculate_E_field_3d(X, Y, Z, q, q_pos):
     """
-    This app shows the electric field of two point charges:
-    - **+q** (red) at \((-a, 0)\)  
-    - **−q** (blue) at \((+a, 0)\)
+    คำนวณเวกเตอร์สนามไฟฟ้า (Ex, Ey, Ez) จากประจุจุดเดียวใน 3 มิติ
+    ใช้ @st.cache_data เพื่อป้องกันการคำนวณซ้ำเมื่อพารามิเตอร์ไม่เปลี่ยน
+    """
+    x0, y0, z0 = q_pos
+
+    dx = X - x0
+    dy = Y - y0
+    dz = Z - z0
+
+    r_squared = dx**2 + dy**2 + dz**2
+
+    # ป้องกันการหารด้วยศูนย์
+    r_squared = np.where(r_squared < 1e-12, 1e-12, r_squared)
+    r = np.sqrt(r_squared)
+
+    # ขนาดของสนามไฟฟ้า E = k * q / r^2 (k = 1 เพื่อความง่าย)
+    E_magnitude = q / r_squared
+
+    # ส่วนประกอบของสนามไฟฟ้า
+    Ex = E_magnitude * (dx / r)
+    Ey = E_magnitude * (dy / r)
+    Ez = E_magnitude * (dz / r)
+
+    return Ex, Ey, Ez
+
+# --- 2. Streamlit UI และการตั้งค่า ---
+
+st.set_page_config(page_title="3D Electric Field Visualizer (Plotly)", layout="wide")
+st.title("🔌 3D Electric Field Visualization")
+st.caption("การแสดงผลเวกเตอร์สนามไฟฟ้า 3 มิติรอบประจุจุดเดียวโดยใช้ Plotly")
+
+# --- 3. Sidebar สำหรับการตั้งค่าพารามิเตอร์ ---
+
+with st.sidebar:
+    st.header("Charge Parameters")
+    charge_q = st.slider("Charge Value (q)", -10.0, 10.0, 5.0, 0.5)
     
-    You can adjust the separation and magnitude below.
-    """
-)
+    st.subheader("Charge Position (x0, y0, z0)")
+    lim_pos = 2.0
+    charge_x0 = st.slider("x0", -lim_pos, lim_pos, 0.0, 0.1)
+    charge_y0 = st.slider("y0", -lim_pos, lim_pos, 0.0, 0.1)
+    charge_z0 = st.slider("z0", -lim_pos, lim_pos, 0.0, 0.1)
+    
+    charge_pos = (charge_x0, charge_y0, charge_z0)
 
-# --- Parameters for the dipole ---
-a = st.slider("Half separation  a  (distance from origin)", 0.2, 3.0, 1.0, 0.1)
-q = st.slider("Negative (-) Charge / Positive (+) Charge  (dimensionless)", 0.5, 3.0, 1.0, 0.1)
+    st.header("Grid Settings")
+    n_points = st.slider("Resolution (Points per axis)", 5, 20, 10, 1)
+    lim = st.slider("Boundary (-L to L)", 1.0, 5.0, 3.0, 0.5)
+    
+    cone_size_ref = st.slider("Vector Size Multiplier", 0.1, 2.0, 0.5, 0.1)
+    
 
-# Positions of the charges
-x1, y1 = -a, 0.0  # +q
-x2, y2 = +a, 0.0  # -q
-q1 = +1
-q2 = -q
+# --- 4. การคำนวณและสร้างกราฟ ---
 
-# --- Create a grid for the field ---
-x = np.linspace(-4, 4, 41)
-y = np.linspace(-4, 4, 41)
-X, Y = np.meshgrid(x, y)
+if st.button("Generate 3D Field") or True: # True: เพื่อให้รันอัตโนมัติเมื่อเปิดแอป
 
-def E_point_charge(q, xq, yq, X, Y):
-    """
-    Electric field of a point charge q at (xq, yq),
-    evaluated on grid (X, Y), with k set to 1.
-    E = k q r / |r|^3
-    """
-    dx = X - xq
-    dy = Y - yq
-    r2 = dx**2 + dy**2
-    r = np.sqrt(r2)
-    # Avoid division by zero very close to the charge
-    r3 = r2 * r
-    # Small epsilon to avoid nan at exactly the charge location
-    r3 = np.where(r3 == 0, np.nan, r3)
+    # 4.1 สร้างกริด
+    x_range = np.linspace(-lim, lim, n_points)
+    y_range = np.linspace(-lim, lim, n_points)
+    z_range = np.linspace(-lim, lim, n_points)
+    X, Y, Z = np.meshgrid(x_range, y_range, z_range, indexing='ij')
 
-    Ex = q * dx / r3
-    Ey = q * dy / r3
-    return Ex, Ey
+    # 4.2 คำนวณสนามไฟฟ้า
+    Ex, Ey, Ez = calculate_E_field_3d(X, Y, Z, charge_q, charge_pos)
 
-# --- Total field from the two charges ---
-Ex1, Ey1 = E_point_charge(q1, x1, y1, X, Y)
-Ex2, Ey2 = E_point_charge(q2, x2, y2, X, Y)
+    # 4.3 สร้าง Trace สำหรับประจุ
+    charge_trace = go.Scatter3d(
+        x=[charge_pos[0]], y=[charge_pos[1]], z=[charge_pos[2]],
+        mode='markers',
+        marker=dict(
+            size=15,
+            color='red' if charge_q >= 0 else 'blue',
+            symbol='circle',
+            opacity=1.0
+        ),
+        name=f'Point Charge q = {charge_q:.1f}'
+    )
 
-Ex = Ex1 + Ex2
-Ey = Ey1 + Ey2
+    # 4.4 สร้าง Cone trace สำหรับสนามไฟฟ้า
+    # คำนวณขนาด (Magnitude) เพื่อใช้ใน colorscale
+    E_mag_flat = np.sqrt(Ex.flatten()**2 + Ey.flatten()**2 + Ez.flatten()**2)
+    
+    # กำหนดค่าที่มากที่สุดของสี
+    max_e_mag = np.max(E_mag_flat)
+    
+    field_trace = go.Cone(
+        x=X.flatten(), y=Y.flatten(), z=Z.flatten(),
+        u=Ex.flatten(), v=Ey.flatten(), w=Ez.flatten(),
+        sizemode="absolute",
+        sizeref=cone_size_ref, 
+        anchor="tip",
+        colorscale='Hot',
+        cmin=0,
+        cmax=max_e_mag * 0.5, # ปรับ cmax เพื่อให้เห็นความแตกต่างของสีชัดเจนขึ้น
+        showscale=True,
+        colorbar=dict(title='|E| Magnitude'),
+        name='Electric Field Vector'
+    )
 
-# Mask points too close to the charges (for nicer plotting)
-mask1 = (X - x1)**2 + (Y - y1)**2 < 0.05
-mask2 = (X - x2)**2 + (Y - y2)**2 < 0.05
-mask = mask1 | mask2
+    # 4.5 จัดองค์ประกอบของกราฟ
+    fig = go.Figure(data=[charge_trace, field_trace])
 
-Ex = np.ma.array(Ex, mask=mask)
-Ey = np.ma.array(Ey, mask=mask)
+    fig.update_layout(
+        title=f'3D Electric Field (q = {charge_q:.1f})',
+        scene=dict(
+            xaxis_title='X Axis',
+            yaxis_title='Y Axis',
+            zaxis_title='Z Axis',
+            # ปรับมุมมองและขอบเขต
+            aspectmode='cube',
+            xaxis=dict(range=[-lim, lim]),
+            yaxis=dict(range=[-lim, lim]),
+            zaxis=dict(range=[-lim, lim])
+        ),
+        height=700,
+        margin=dict(l=0, r=0, b=0, t=50)
+    )
 
-# --- Plot using matplotlib streamplot ---
-fig, ax = plt.subplots(figsize=(6, 6))
-
-# Field line coloring by |E|
-E_magnitude = np.hypot(Ex, Ey)
-color = np.log(E_magnitude)  # log for better contrast
-
-ax.streamplot(
-    X, Y, Ex, Ey,
-    color=color,
-    density=1.2,
-    linewidth=1,
-    arrowsize=1.2
-)
-
-# Plot the charges themselves
-ax.scatter([x1], [y1], color="red", s=80, label="+q")
-ax.scatter([x2], [y2], color="blue", s=80, label="−q")
-
-ax.set_aspect("equal")
-ax.set_xlabel("x")
-ax.set_ylabel("y")
-ax.set_title("Electric Field of a +q / −q Dipole (k = 1)")
-ax.legend(loc="upper right")
-
-st.pyplot(fig)
+    # 4.6 แสดงผลใน Streamlit
+    st.plotly_chart(fig, use_container_width=True)
