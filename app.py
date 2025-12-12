@@ -2,14 +2,16 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# ฟังก์ชันสำหรับคำนวณสนามไฟฟ้าจากจุดประจุ
-# ในที่นี้ใช้สูตรสำหรับแรงดึงดูด/ผลักตามกฎของคูลอมบ์ และสมมาตร (bipolar field)
+# ฟังก์ชันสำหรับคำนวณสนามไฟฟ้าจากจุดประจุ (ไม่เปลี่ยนแปลง)
+# ... (ส่วนของฟังก์ชัน E_field ยังคงเหมือนเดิม) ...
+
 def E_field(x, y, q1, pos1, q2, pos2):
     """
     คำนวณส่วนประกอบของสนามไฟฟ้า E_x และ E_y ที่จุด (x, y)
     จากจุดประจุสองจุด q1 ที่ pos1 และ q2 ที่ pos2.
     """
     # ตำแหน่งประจุ
+    # *** บรรทัดนี้คือจุดที่เกิดปัญหาเมื่อไม่มีการ excluded ใน np.vectorize ***
     x1, y1 = pos1
     x2, y2 = pos2
 
@@ -26,11 +28,8 @@ def E_field(x, y, q1, pos1, q2, pos2):
     k = 1.0
     
     # คำนวณขนาดของสนามไฟฟ้า (k*q/r^2)
-    # เราจะคำนวณ E_x และ E_y แยกกัน โดยใช้หน่วยเวกเตอร์ r/r
     
     # สนามจากประจุ 1
-    # E_x = k*q*r_x / r^3
-    # E_y = k*q*r_y / r^3
     if r1_sq == 0:
         E1x, E1y = 0, 0
     else:
@@ -52,22 +51,22 @@ def E_field(x, y, q1, pos1, q2, pos2):
     
     return Ex, Ey
 
-# --- การตั้งค่า Streamlit ---
+# --- การตั้งค่า Streamlit (ส่วนนี้ไม่เปลี่ยนแปลง) ---
 st.title("⚡ การจำลองสนามไฟฟ้าจากจุดประจุสองจุด (Bipolar Field)")
 st.write("ปรับค่าประจุและตำแหน่งเพื่อดูการเปลี่ยนแปลงของเส้นสนาม")
 
 # แถบด้านข้างสำหรับควบคุม
 st.sidebar.header("การตั้งค่าจุดประจุ")
 
-# ประจุ 1 (อาจจะเป็นประจุบวก)
-q1 = st.sidebar.slider("ประจุ Q1 (สีแดง)", -10.0, 10.0, 1.0, 0.5)
+# ประจุ 1
+q1 = st.sidebar.slider("ประจุ Q1 (สีแดง)", -10.0, 10.0, 7.0, 0.5) # ปรับค่าเริ่มต้นตามภาพ
 x1 = st.sidebar.slider("ตำแหน่ง X1", -5.0, 5.0, 1.0, 0.5)
 y1 = st.sidebar.slider("ตำแหน่ง Y1", -5.0, 5.0, 0.0, 0.5)
 pos1 = (x1, y1)
 
 st.sidebar.markdown("---")
 
-# ประจุ 2 (อาจจะเป็นประจุลบ)
+# ประจุ 2
 q2 = st.sidebar.slider("ประจุ Q2 (สีน้ำเงิน)", -10.0, 10.0, -1.0, 0.5)
 x2 = st.sidebar.slider("ตำแหน่ง X2", -5.0, 5.0, -1.0, 0.5)
 y2 = st.sidebar.slider("ตำแหน่ง Y2", -5.0, 5.0, 0.0, 0.5)
@@ -92,21 +91,20 @@ else:
     X, Y = np.meshgrid(x, y)
 
     # คำนวณสนามไฟฟ้าที่แต่ละจุด
-    # ใช้ np.vectorize เพื่อให้ฟังก์ชัน E_field สามารถรับ Array เป็น Input ได้
-    E_field_vec = np.vectorize(E_field)
+    # *** ส่วนที่ต้องแก้ไข/เพิ่มเติม คือการใช้ excluded ***
+    # excluded=[2, 3, 4, 5] หมายถึงการยกเว้นพารามิเตอร์ตัวที่ 3, 4, 5 และ 6 
+    # (q1, pos1, q2, pos2) ไม่ให้ถูก vectorize
+    E_field_vec = np.vectorize(E_field, excluded=[2, 3, 4, 5]) 
     Ex, Ey = E_field_vec(X, Y, q1, pos1, q2, pos2)
 
     # พล็อตด้วย Matplotlib
     fig, ax = plt.subplots(figsize=(8, 8))
 
     # ใช้ streamplot เพื่อแสดงเส้นสนามไฟฟ้า
-    # density=2 หมายถึงมีเส้นสนามหนาแน่นกว่าค่า default
-    # color=Ex/np.sqrt(Ex**2 + Ey**2) เป็นการให้สีตามทิศทาง (ไม่จำเป็นแต่เพิ่มความสวยงาม)
     speed = np.sqrt(Ex**2 + Ey**2)
     ax.streamplot(X, Y, Ex, Ey, color=speed, cmap=plt.cm.jet, linewidth=1, density=2, arrowstyle='->', arrowsize=1.5)
 
     # พล็อตจุดประจุ
-    # ประจุบวก (q > 0) เป็นสีแดง, ประจุลบ (q < 0) เป็นสีน้ำเงิน
     ax.plot(x1, y1, 'o', color='red' if q1 >= 0 else 'blue', markersize=10, label=f'Q1 ({q1} C)')
     ax.plot(x2, y2, 'o', color='red' if q2 >= 0 else 'blue', markersize=10, label=f'Q2 ({q2} C)')
 
@@ -124,5 +122,3 @@ else:
     st.pyplot(fig)
 
     st.caption(f"Q1: {q1} C @ ({x1}, {y1}) | Q2: {q2} C @ ({x2}, {y2})")
-
-
